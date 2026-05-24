@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">No DHCP Hostname</string>
+    <string name="app_desc">Block DHCP Option 12 Hostname in Android NetworkStack.</string>
+</resources>
