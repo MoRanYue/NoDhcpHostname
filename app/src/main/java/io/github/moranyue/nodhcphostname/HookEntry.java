@@ -11,8 +11,19 @@ import io.github.libxposed.api.XposedModuleInterface;
 
 public class HookEntry extends XposedModule {
     private static final String TAG = "NoDhcpHostname";
-    private static final String TARGET_PACKAGE = "com.android.networkstack";
-    private static final String DHCP_PACKET = "com.android.networkstack.android.net.dhcp.DhcpPacket";
+
+    // Candidate target packages
+    private static final String[] TARGET_PACKAGES = {
+        "com.android.networkstack",
+        "com.google.android.networkstack",
+    };
+
+    // Candidate DhcpPacket class names (tried in order)
+    private static final String[] DHCP_PACKET_CLASSES = {
+        "com.android.networkstack.android.net.dhcp.DhcpPacket",
+        "android.net.dhcp.DhcpPacket",
+        "com.google.android.networkstack.android.net.dhcp.DhcpPacket",
+    };
 
     // DHCP option codes (RFC 2132)
     private static final int OPT_HOST_NAME = 12;          // Host Name
@@ -25,13 +36,35 @@ public class HookEntry extends XposedModule {
 
     @Override
     public void onPackageLoaded(XposedModuleInterface.PackageLoadedParam param) {
-        if (!TARGET_PACKAGE.equals(param.getPackageName())) return;
+        boolean isTarget = false;
+        for (String pkg : TARGET_PACKAGES) {
+            if (pkg.equals(param.getPackageName())) {
+                isTarget = true;
+                break;
+            }
+        }
+        if (!isTarget) return;
         if (!param.isFirstPackage()) return;
 
-        try {
-            ClassLoader cl = param.getDefaultClassLoader();
-            Class<?> dhcpPacket = Class.forName(DHCP_PACKET, false, cl);
+        ClassLoader cl = param.getDefaultClassLoader();
+        Class<?> dhcpPacket = null;
 
+        for (String className : DHCP_PACKET_CLASSES) {
+            try {
+                dhcpPacket = Class.forName(className, false, cl);
+                log(Log.INFO, TAG, "Found DhcpPacket class: " + className);
+                break;
+            } catch (ClassNotFoundException ignored) {
+                log(Log.DEBUG, TAG, "Class not found: " + className);
+            }
+        }
+
+        if (dhcpPacket == null) {
+            log(Log.ERROR, TAG, "DhcpPacket class not found in " + param.getPackageName());
+            return;
+        }
+
+        try {
             hookAddTlvString(dhcpPacket);
             hookAddTlvBytes(dhcpPacket);
             hookAddCommonClientTlvs(dhcpPacket);
@@ -106,9 +139,21 @@ public class HookEntry extends XposedModule {
         });
     }
 
+    private static Field getDeclaredFieldInHierarchy(Class<?> cls, String name) throws NoSuchFieldException {
+        for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+            try {
+                Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f;
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        throw new NoSuchFieldException(name);
+    }
+
     private void clearField(Class<?> dhcpPacket, Object packet, String fieldName) {
         try {
-            Field field = dhcpPacket.getField(fieldName);
+            Field field = getDeclaredFieldInHierarchy(dhcpPacket, fieldName);
             field.set(packet, null);
         } catch (Throwable t) {
             log(Log.WARN, TAG, "Failed to clear field " + fieldName, t);
