@@ -17,16 +17,19 @@ This module blocks DHCP Option 12 and Option 60 before the packet is sent, reduc
 
 This module hooks Android NetworkStack and blocks DHCP Host Name (Option 12) and Vendor Class Identifier (Option 60) option generation.
 
-Target package:
+Target packages:
 
 ```text
 com.android.networkstack
+com.google.android.networkstack
 ```
 
-Known target class on tested HyperOS / Android 16 builds:
+Known target classes (tried in order at runtime, first one present in the loaded package wins):
 
 ```text
 com.android.networkstack.android.net.dhcp.DhcpPacket
+android.net.dhcp.DhcpPacket
+com.google.android.networkstack.android.net.dhcp.DhcpPacket
 ```
 
 Hooked methods:
@@ -73,8 +76,10 @@ Therefore, this module blocks the final DHCP TLV writing path directly.
 * LSPosed / compatible Xposed framework
 * Android NetworkStack package:
   * `com.android.networkstack`
+  * `com.google.android.networkstack` (Play-shipped NetworkStack, e.g. EEA / Pixel builds)
 * Tested on:
   * HyperOS / Android 16
+  * HyperOS 3 (Android 17) with Play-shipped `com.google.android.networkstack` — see compatibility notes
   * LSPosed API 101 runtime
 
 Other ROMs may use a different NetworkStack class name. See the compatibility notes below.
@@ -89,7 +94,10 @@ Other ROMs may use a different NetworkStack class name. See the compatibility no
 
 ```text
 com.android.networkstack
+com.google.android.networkstack
 ```
+
+(If your ROM only has one of the two packages, add that one.)
 
 6. Reboot the device.
 7. Reconnect Wi-Fi.
@@ -126,19 +134,16 @@ Other DHCP options, such as Client-ID, Requested-IP, and Parameter-Request, are 
 
 ## Compatibility notes
 
-**This module was successfully tested on Xiaomi 15 (`dada`) with `HyperOS 3.0.302.0.WOCCNXM.C07 (Android 16)`.**
+**Tested successfully on:**
+* Xiaomi 15 (`dada`) with `HyperOS 3.0.302.0.WOCCNXM.C07 (Android 16)` — package `com.android.networkstack`.
+* Xiaomi 15 Ultra with HyperOS OS3 (`Android 17`, EEA build `OS3.0.301.0.WOAEUXM`) — no `com.android.networkstack` present; module hooks the Play-shipped `com.google.android.networkstack` and Option 12 Hostname no longer appears in captured DHCP packets (contributed by [h3nnes](https://github.com/h3nnes)).
 
-This module was designed around the following class name:
-
-```text
-com.android.networkstack.android.net.dhcp.DhcpPacket
-```
-
-Some ROMs may use the AOSP class name instead:
-
-```text
-android.net.dhcp.DhcpPacket
-```
+Since v1.2.0 the module accepts both target packages and tries several class names at runtime:
+the AOSP-style `com.android.networkstack.android.net.dhcp.DhcpPacket`, the legacy AOSP
+`android.net.dhcp.DhcpPacket`, and the Google Play build
+`com.google.android.networkstack.android.net.dhcp.DhcpPacket`. It also walks the class
+hierarchy (`getDeclaredField`) to clear the `mHostName`/`mVendorId` fields, which are not
+always public on Google builds.
 
 If the module does not work on your ROM, decompile or inspect your `NetworkStack.apk` and search for:
 
@@ -182,17 +187,10 @@ For stronger privacy, also consider:
 
 ### The module is enabled but Hostname / Vendor-Class is still visible
 
-Check LSPosed logs and confirm that the module is loaded into:
-
-```text
-com.android.networkstack
-```
-
-Also verify that your ROM uses the expected class name:
-
-```text
-com.android.networkstack.android.net.dhcp.DhcpPacket
-```
+Check LSPosed logs and confirm that the module is loaded into your actual NetworkStack package
+(`com.android.networkstack` or `com.google.android.networkstack`) — EEA/Pixel builds without the
+AOSP package need the Google one. The log shows which `DhcpPacket` class name was found
+("Found DhcpPacket class: ...") or an error if none matched.
 
 ### Wi-Fi or DHCP behaves abnormally
 

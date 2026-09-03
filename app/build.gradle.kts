@@ -23,8 +23,8 @@ android {
         applicationId = "io.github.moranyue.nodhcphostname"
         minSdk = 29
         targetSdk = 37
-        versionCode = 101
-        versionName = "1.1.0"
+        versionCode = 102
+        versionName = "1.2.0"
     }
 
     signingConfigs {

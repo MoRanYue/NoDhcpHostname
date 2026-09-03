@@ -21,12 +21,15 @@ Vendor-Class (60): "android-dhcp-16"
 
 ```text
 com.android.networkstack
+com.google.android.networkstack
 ```
 
-在已测试的 HyperOS / Android 16 系统中，目标类名为：
+运行时按顺序尝试以下类名（以加载的包中实际存在的类为准）：
 
 ```text
 com.android.networkstack.android.net.dhcp.DhcpPacket
+android.net.dhcp.DhcpPacket
+com.google.android.networkstack.android.net.dhcp.DhcpPacket
 ```
 
 Hook 的方法包括：
@@ -73,8 +76,10 @@ DHCP 报文中仍然可能出现 Option 12 Hostname。
 * LSPosed 或兼容的 Xposed 框架
 * 系统存在 NetworkStack 包：
   * `com.android.networkstack`
+  * `com.google.android.networkstack`（Play 商店分发的 NetworkStack，常见于 EEA / Pixel 版本）
 * 已测试环境：
   * HyperOS / Android 16
+  * 搭载 Play 版 `com.google.android.networkstack` 的 HyperOS 3（Android 17）设备，详见兼容性说明
   * LSPosed API 101 运行时
 
 其它 ROM 可能使用不同的 NetworkStack 类名，详见兼容性说明。
@@ -89,7 +94,10 @@ DHCP 报文中仍然可能出现 Option 12 Hostname。
 
 ```text
 com.android.networkstack
+com.google.android.networkstack
 ```
+
+（如果 ROM 中只存在其中一个包，添加对应的那个即可。）
 
 6. 重启设备。
 7. 重新连接 Wi-Fi。
@@ -126,19 +134,15 @@ Vendor-Class (60)
 
 ## 兼容性说明
 
-**此模块仅在小米15（`dada`），系统版本`HyperOS 3.0.302.0.WOCCNXM.C07 (Android 16)`上测试通过。**
+**已测试通过的环境：**
+* 小米15（`dada`），`HyperOS 3.0.302.0.WOCCNXM.C07 (Android 16)` — 包名 `com.android.networkstack`。
+* 小米15 Ultra，HyperOS OS3（`Android 17`，EEA 版本 `OS3.0.301.0.WOAEUXM`）— 系统中没有 `com.android.networkstack`，模块注入 Play 版 `com.google.android.networkstack`，抓包确认 Option 12 Hostname 不再出现（由 [h3nnes](https://github.com/h3nnes) 贡献）。
 
-本模块默认针对以下类名：
-
-```text
-com.android.networkstack.android.net.dhcp.DhcpPacket
-```
-
-部分 ROM 可能使用 AOSP 原始类名：
-
-```text
-android.net.dhcp.DhcpPacket
-```
+从 v1.2.0 起，模块同时接受两个目标包，并在运行时尝试多种类名：
+AOSP 风格的 `com.android.networkstack.android.net.dhcp.DhcpPacket`、旧版 AOSP 的
+`android.net.dhcp.DhcpPacket`、以及 Google Play 版的
+`com.google.android.networkstack.android.net.dhcp.DhcpPacket`。此外，模块会沿类继承链查找
+（`getDeclaredField`）并将 `mHostName` / `mVendorId` 字段置空 —— 这些字段在 Google 版构建中不一定是 public。
 
 如果模块在你的 ROM 上没有效果，可以反编译或查看 `NetworkStack.apk`，搜索以下关键词：
 
@@ -182,17 +186,8 @@ DHCP_HOST_NAME
 
 ### 模块已启用，但仍然看到 Hostname / Vendor-Class
 
-请先检查 LSPosed 日志，确认模块已经注入：
-
-```text
-com.android.networkstack
-```
-
-同时确认你的 ROM 是否使用了预期类名：
-
-```text
-com.android.networkstack.android.net.dhcp.DhcpPacket
-```
+请先检查 LSPosed 日志，确认模块已注入到你设备上实际的 NetworkStack 包
+（`com.android.networkstack` 或 `com.google.android.networkstack`）——EEA / Pixel 等没有 AOSP 包的版本需要选择 Google 包。日志中会显示找到了哪个 `DhcpPacket` 类名（“Found DhcpPacket class: ...”），若全部找不到则会输出错误日志。
 
 ### Wi-Fi 或 DHCP 出现异常
 
