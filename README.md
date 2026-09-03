@@ -2,20 +2,20 @@
 
 **English** | [简体中文](/README.zh-CN.md)
 
-An LSPosed module that prevents Android NetworkStack from sending the device hostname in DHCP requests.
+An LSPosed module that prevents Android NetworkStack from sending the device hostname and Vendor-Class in DHCP requests.
 
-On some Android devices, especially Xiaomi / HyperOS devices, DHCP packets may include Option 12 Host Name, such as:
+On some Android devices, especially Xiaomi / HyperOS devices, DHCP packets may include the following options, such as:
 
 ```text
 Hostname (12): "Xiaomi-15"
 Vendor-Class (60): "android-dhcp-16"
 ```
 
-This module blocks DHCP Option 12 before the packet is sent, reducing device-name leakage to routers and DHCP servers.
+This module blocks DHCP Option 12 and Option 60 before the packet is sent, reducing device-name and OS-version leakage to routers and DHCP servers.
 
 ## What it does
 
-This module hooks Android NetworkStack and blocks DHCP Host Name option generation.
+This module hooks Android NetworkStack and blocks DHCP Host Name (Option 12) and Vendor Class Identifier (Option 60) option generation.
 
 Target package:
 
@@ -34,9 +34,12 @@ Hooked methods:
 ```java
 addTlv(ByteBuffer, byte, String)
 addTlv(ByteBuffer, byte, byte[])
+addCommonClientTlvs(ByteBuffer)
 ```
 
-When the DHCP option code is `12`, the original method is skipped.
+When the DHCP option code is `12` (Host Name) or `60` (Vendor Class Identifier), the original method is skipped.
+
+> Note: in decompiled HyperOS 4 NetworkStack code, the Option 60 value comes from `DhcpPacket.getVendorId()`, defaulting to something like `android-dhcp-<os version>` (e.g. `android-dhcp-16`), and is written in `addCommonClientTlvs()` via `addTlv`. There is no other Option 60 write path (type 60 entries in the customized client options are explicitly skipped and only feed the Vendor ID string), so hooking `addTlv` and `addCommonClientTlvs` removes Vendor-Class completely. As a second line of defense, the module also nulls the `mHostName` and `mVendorId` fields before `addCommonClientTlvs()` runs, covering custom ROMs that serialize these options straight into the ByteBuffer.
 
 ## Why not only use an RRO overlay?
 
@@ -109,15 +112,17 @@ Before enabling this module, you may see:
 
 ```text
 Hostname (12): "Xiaomi-15"
+Vendor-Class (60): "android-dhcp-16"
 ```
 
 After enabling this module, DHCP packets should no longer contain:
 
 ```text
 Hostname (12)
+Vendor-Class (60)
 ```
 
-Other DHCP options, such as Vendor-Class, Client-ID, Requested-IP, and Parameter-Request, are not removed by this module.
+Other DHCP options, such as Client-ID, Requested-IP, and Parameter-Request, are not removed by this module.
 
 ## Compatibility notes
 
@@ -142,20 +147,24 @@ DhcpPacket
 addTlv
 addCommonClientTlvs
 Hostname
+VendorId
+mVendorId
+getVendorId
 DHCP_HOST_NAME
 ```
 
 Then adjust the hook target accordingly.
 
+> The hook strategy has been checked against decompiled HyperOS 4 (Android 17 beta target) NetworkStack code: `DhcpDiscoverPacket`, `DhcpRequestPacket` and `DhcpReleasePacket` all write Option 12/60 through `addCommonClientTlvs()` → `addTlv()`; the DHCP server responses (Offer/Ack) never write Option 60, and the DHCPv6 path carries no Vendor-Class. Hooking those methods therefore removes Hostname and Vendor-Class from all DHCPv4 client messages.
+
 ## Limitations
 
-This module only blocks DHCP Option 12 Hostname.
+This module only blocks DHCP Option 12 Hostname and Option 60 Vendor Class Identifier.
 
 It does not hide:
 
-* DHCP Vendor-Class, for example `android-dhcp-16`
-* DHCP Client-ID
-* MAC address
+* DHCP Client-ID (carries a MAC-derived identifier; it is randomized together with the MAC when MAC randomization is on)
+* MAC address (always present in DHCP chaddr and the Ethernet frame header)
 * mDNS / Bonjour names
 * SSDP / UPnP service names
 * Bluetooth device name
@@ -171,7 +180,7 @@ For stronger privacy, also consider:
 
 ## Troubleshooting
 
-### The module is enabled but Hostname is still visible
+### The module is enabled but Hostname / Vendor-Class is still visible
 
 Check LSPosed logs and confirm that the module is loaded into:
 
@@ -189,20 +198,20 @@ com.android.networkstack.android.net.dhcp.DhcpPacket
 
 Disable the module in LSPosed and reboot.
 
-This module modifies DHCP packet construction. Although it only skips Option 12, unexpected ROM modifications may cause compatibility issues.
+This module modifies DHCP packet construction. Although it only skips Option 12 and Option 60, unexpected ROM modifications may cause compatibility issues.
 
-### Hostname disappears, but the router still identifies the device
+### Hostname / Vendor-Class disappears, but the router still identifies the device
 
 Routers may identify devices through other signals, including:
 
 * MAC address OUI
-* DHCP Vendor-Class
+* DHCP Client-ID
 * mDNS
 * SSDP / UPnP
 * Device fingerprinting
 * Previously cached records
 
-This module only removes DHCP Hostname.
+This module only removes DHCP Hostname and Vendor-Class.
 
 ## Disclaimer
 
